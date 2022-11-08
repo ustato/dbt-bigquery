@@ -5,13 +5,15 @@ from dataclasses import dataclass
 from functools import lru_cache
 import agate
 from requests.exceptions import ConnectionError
-from typing import Optional, Any, Dict, Tuple
+from typing import Optional, Any, Dict, Tuple, Union
 
 import google.auth
 import google.auth.exceptions
 import google.cloud.bigquery
 import google.cloud.exceptions
 from google.api_core import retry, client_info
+from google.api_core.client_options import ClientOptions
+from google.auth.credentials import AnonymousCredentials
 from google.auth import impersonated_credentials
 from google.oauth2 import (
     credentials as GoogleCredentials,
@@ -81,6 +83,7 @@ class BigQueryConnectionMethod(StrEnum):
     SERVICE_ACCOUNT = "service-account"
     SERVICE_ACCOUNT_JSON = "service-account-json"
     OAUTH_SECRETS = "oauth-secrets"
+    EMULATOR = "emulator"
 
 
 @dataclass
@@ -139,6 +142,9 @@ class BigQueryCredentials(Credentials):
         "retries": "job_retries",
         "timeout_seconds": "job_execution_timeout_seconds",
     }
+
+    # emulator
+    endpoint: Optional[str] = None
 
     @property
     def type(self):
@@ -278,7 +284,7 @@ class BigQueryConnectionManager(BaseConnectionManager):
         return f"{rows_number:3.1f}{unit}".strip()
 
     @classmethod
-    def get_google_credentials(cls, profile_credentials) -> GoogleCredentials:
+    def get_google_credentials(cls, profile_credentials) -> Union[GoogleCredentials.Credentials, AnonymousCredentials]:
         method = profile_credentials.method
         creds = GoogleServiceAccountCredentials.Credentials
 
@@ -303,6 +309,9 @@ class BigQueryConnectionManager(BaseConnectionManager):
                 token_uri=profile_credentials.token_uri,
                 scopes=profile_credentials.scopes,
             )
+
+        elif method == BigQueryConnectionMethod.EMULATOR:
+            return AnonymousCredentials()
 
         error = 'Invalid `method` in profile: "{}"'.format(method)
         raise FailedToConnectException(error)
@@ -329,11 +338,13 @@ class BigQueryConnectionManager(BaseConnectionManager):
         creds = cls.get_credentials(profile_credentials)
         execution_project = profile_credentials.execution_project
         location = getattr(profile_credentials, "location", None)
+        endpoint = getattr(profile_credentials, "endpoint", None)
 
         info = client_info.ClientInfo(user_agent=f"dbt-{dbt_version}")
         return google.cloud.bigquery.Client(
             execution_project,
-            creds,
+            credentials=creds,
+            client_options=ClientOptions(api_endpoint=endpoint),
             location=location,
             client_info=info,
         )
