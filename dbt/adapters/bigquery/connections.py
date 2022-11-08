@@ -638,6 +638,7 @@ class BigQueryConnectionManager(BaseConnectionManager):
         """Query the client and wait for results."""
         # Cannot reuse job_config if destination is set and ddl is used
         job_config = google.cloud.bigquery.QueryJobConfig(**job_params)
+        logger.debug(sql)
         query_job = client.query(query=sql, job_config=job_config, timeout=job_creation_timeout)
         iterator = query_job.result(timeout=job_execution_timeout)
 
